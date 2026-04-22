@@ -1,0 +1,21 @@
+# PlatformIO
+.pio
+
+# VS Code
+.vscode/.browse.c_cpp.db*
+.vscode/c_cpp_properties.json
+.vscode/launch.json
+.vscode/ipch
+
+# Claude Code
+.claude/
+
+# Credenciais (NUNCA commitar)
+include/credentials.h
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Blog (rascunho local)
+blog-post.md
