@@ -21,9 +21,9 @@ An ESP32-based temperature controller with local interface (20x4 LCD + rotary en
 
 ## Photos
 
-| Assembled on bench | Installed on oven |
-|---|---|
-| ![Bench](docs/images/project-assembled.jpeg) | ![Oven](docs/images/project-detail.jpeg) |
+| Assembled on bench | Installed on oven | Oven overview |
+|---|---|---|
+| ![Bench](docs/images/project-assembled.jpeg) | ![Oven](docs/images/project-detail.jpeg) | ![Overview](docs/images/oven-overview.jpeg) |
 
 ---
 
