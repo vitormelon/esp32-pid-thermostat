@@ -30,7 +30,6 @@
 #define OVERTEMP_DELAY_MS       60000UL
 #define TEMP_MIN_VALID          -50.0f
 #define TEMP_MAX_VALID          150.0f
-#define MOVING_AVG_SAMPLES      5
 
 // ============================================================
 // CONTROL DEFAULTS & LIMITS
@@ -103,8 +102,14 @@ static const char* const BL_TIMEOUT_NAMES[] = {"Sempre", "1 min", "5 min", "10 m
 // BLYNK
 // ============================================================
 #define BLYNK_SEND_INTERVAL     2000UL
-#define BLYNK_CONNECT_TIMEOUT_MS 3000UL
-#define BLYNK_RETRY_INTERVAL    15000UL
+// Tempo máximo que Blynk.connect() bloqueia o loop. Reduzido de 3s para
+// 1s para minimizar latência percebida em outras tarefas (sensor, encoder,
+// safety). Trade-off: conexões em redes lentas podem precisar de mais retries.
+#define BLYNK_CONNECT_TIMEOUT_MS 1000UL
+// Backoff exponencial entre tentativas: começa em 15s, dobra até 5min.
+// Reseta para o mínimo quando reconecta.
+#define BLYNK_RETRY_INTERVAL_MIN 15000UL
+#define BLYNK_RETRY_INTERVAL_MAX 300000UL
 
 // ============================================================
 // WATCHDOG
@@ -143,7 +148,6 @@ static const char* const GRAPH_SCALE_NAMES[] = {"10m","30m","1h","2h","4h","8h",
 // AUTOTUNE
 // ============================================================
 #define AUTOTUNE_CYCLES         5
-#define AUTOTUNE_NOISE_BAND     0.5f
 
 // ============================================================
 // SAFETY

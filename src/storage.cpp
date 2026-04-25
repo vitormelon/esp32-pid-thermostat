@@ -179,7 +179,8 @@ void storageSaveTimerMinutes() {
 // ============================================================
 
 void storageSaveGraphScale(int scale) {
-    saveIntIfChanged("oven", "gscale", scale);
+    int v = constrain(scale, 0, GRAPH_SCALE_COUNT - 1);
+    saveIntIfChanged("oven", "gscale", v);
 }
 
 int storageLoadGraphScale() {

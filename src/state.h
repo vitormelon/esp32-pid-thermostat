@@ -18,10 +18,6 @@ extern bool  firstValidReading;
 extern bool  newTempReading;
 extern unsigned long lastValidTempTime;
 
-extern float movingAvgBuffer[MOVING_AVG_SAMPLES];
-extern int   movingAvgIndex;
-extern int   movingAvgCount;
-
 // --- Controle ---
 extern float setPoint;
 extern float offset;
@@ -77,3 +73,6 @@ extern unsigned long recoveryTimerRem;
 extern unsigned int  recoveryTimerSet;
 extern bool          recoveryDecisionMade;
 extern bool          recoveryDecisionResume;
+
+// Zera todas as variáveis de recovery aos valores padrão.
+void recoveryReset();

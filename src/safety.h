@@ -11,6 +11,10 @@ void safetyCheck();
 void safetyClear();
 void safetySetTriggerCallback(SafetyTriggerCallback cb);
 
+// Indica se o erro atual pode ser limpo por click simples (true) ou
+// se exige long press (false — caso de RELAY_STUCK, evita loop de clear).
+bool safetyAllowsClickClear();
+
 // Diagnóstico (útil para testes)
 unsigned long safetyCutoffElapsedMs();
 bool          safetyStuckChecked();

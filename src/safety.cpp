@@ -26,7 +26,7 @@ bool safetyStuckChecked() { return sStuckChecked; }
 static void doTrigger(SafetyError err, float trigTemp) {
     safetyError       = err;
     safetyTriggerTemp = trigTemp;
-    setRelay(false);
+    setRelayForce(false);
     systemActive = false;
     if (sCallback) sCallback(err, trigTemp);
 }
@@ -48,7 +48,7 @@ void safetyCheck() {
             sCutoffTemp      = currentTemp;
             sCutoffTime      = millis();
             sStuckChecked    = false;
-            setRelay(false);
+            setRelayForce(false);
         }
 
         // 3. Stuck relay (em SAFETY_STUCK_DELAY_MS, antes do overtemp)
@@ -71,6 +71,10 @@ void safetyCheck() {
         sCutoffTime      = 0;
         sStuckChecked    = false;
     }
+}
+
+bool safetyAllowsClickClear() {
+    return safetyError != SAFETY_RELAY_STUCK;
 }
 
 void safetyClear() {

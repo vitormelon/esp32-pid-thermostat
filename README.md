@@ -291,24 +291,36 @@ Multi-cycle averaging and conservative constants produce more stable parameters 
 
 ## Safety
 
-### Overtemperature (>= 100°C)
+The thresholds below are configured in `src/config.h` (`HARD_CUTOFF_TEMP`, `OVERTEMP_DELAY_MS`, `SAFETY_STUCK_DELAY_MS`, `SAFETY_STUCK_THRESHOLD`). Adjust them for your equipment.
 
-Relay OFF immediately. System deactivated. Error screen with backlight flashing (1s on/1s off).
+### Hard cutoff (>= `HARD_CUTOFF_TEMP`)
+
+Relay forced OFF immediately. The cutoff state then drives stuck-relay detection and the overtemperature timer (below).
+
+### Stuck relay (30s after cutoff, +10°C rise)
+
+If temperature continues to rise more than 10°C above the cutoff point within 30s of relay being commanded OFF, the firmware concludes the relay may be mechanically stuck. Toggles the GPIO 10 times rapidly to try to free the contact, then shows the error screen. **This error requires a long press to clear** (a single click would loop straight back into the same fault if the relay is still stuck).
+
+### Overtemperature (60s above cutoff)
+
+If temperature stays above `HARD_CUTOFF_TEMP` for `OVERTEMP_DELAY_MS` (default 60s) without triggering the stuck check, the firmware deactivates the system and shows the error screen.
 
 ### Sensor failure (no reading for 5s)
 
 Relay OFF. System deactivated. Error screen showing last known temperature.
 
-### Stuck relay
+### Clearing safety errors
 
-After overtemperature, if temperature keeps rising 10°C above the cutoff point (after 30s wait for thermal inertia), the firmware concludes the relay may be mechanically stuck. Toggles the GPIO 10 times rapidly to try to free the contact. Shows error screen.
+- `SENSOR_FAIL` and `OVERTEMP`: single click clears the error.
+- `RELAY_STUCK`: **long press required** (see above).
 
 ### Other protections
 
 - Safe boot: relay always starts OFF
 - Watchdog: 8s timeout = automatic reset
-- Non-blocking WiFi: never interferes with local control
+- Non-blocking WiFi/Blynk: never interferes with local control
 - Reading validation: values outside -50°C to 150°C are discarded
+- Power-loss recovery prompt is non-blocking — sensor reads, WiFi, Blynk and safety checks keep running while the user decides
 
 ---
 

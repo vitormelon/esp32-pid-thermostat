@@ -235,6 +235,28 @@ void test_storageLoadRecoveryState_returns_saved_values(void) {
 }
 
 // ============================================================
+// Graph scale — validação de input (Bug I)
+// ============================================================
+
+// Verifica que o NVS guarda o valor JÁ CONSTRAINED — evita "lixo" no flash
+// que dependeria de o consumidor sempre validar na leitura.
+void test_save_graphScale_clamps_invalid_input(void) {
+    Preferences p;
+    p.begin("oven", true);
+
+    storageSaveGraphScale(99);
+    TEST_ASSERT_EQUAL_INT(GRAPH_SCALE_COUNT - 1, p.getInt("gscale", -1));
+
+    storageSaveGraphScale(-5);
+    TEST_ASSERT_EQUAL_INT(0, p.getInt("gscale", -1));
+
+    storageSaveGraphScale(2);
+    TEST_ASSERT_EQUAL_INT(2, p.getInt("gscale", -1));
+
+    p.end();
+}
+
+// ============================================================
 // Presets
 // ============================================================
 
@@ -292,6 +314,7 @@ int main(int, char**) {
     RUN_TEST(test_recovery_save_unchanged_state_no_writes);
     RUN_TEST(test_storageHasRecoveryState_reflects_saved_active);
     RUN_TEST(test_storageLoadRecoveryState_returns_saved_values);
+    RUN_TEST(test_save_graphScale_clamps_invalid_input);
     RUN_TEST(test_save_and_load_preset);
     RUN_TEST(test_delete_preset_marks_unused);
     return UNITY_END();

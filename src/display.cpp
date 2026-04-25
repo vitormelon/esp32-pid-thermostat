@@ -891,7 +891,11 @@ static void renderSafetyError() {
         lcdLine(2, " Atual:    %.1f%cC", currentTemp, (char)0xDF);
     }
 
-    lcdLine(3, " [Click para limpar]");
+    if (safetyAllowsClickClear()) {
+        lcdLine(3, " [Click para limpar]");
+    } else {
+        lcdLine(3, " [Segure p/ limpar]");
+    }
 }
 
 bool displayIsSafetyScreen() {
@@ -987,9 +991,12 @@ void displayResetAutotuneUI() {
 }
 
 void displayHandleInput(EncoderInput in) {
-    // Safety error: click ou long press limpa o erro
+    // Safety error: click limpa erros normais; RELAY_STUCK exige long press
+    // (evita loop "click → safety dispara de novo → click → ...").
     if (safetyError != SAFETY_OK) {
-        if (in.pressed || in.longPress) {
+        bool canClear = in.longPress
+                     || (in.pressed && safetyAllowsClickClear());
+        if (canClear) {
             safetyClear();
             displaySetBacklight(true);
             curScreen = SCR_HOME;

@@ -44,7 +44,7 @@ void autotuneStart() {
     atSugKp = atSugKi = atSugKd = 0;
     atLastCrossTime  = millis();
     atStartTime      = millis();
-    atT1 = atT2      = micros();
+    atT1 = atT2      = millis();
     atTHigh = atTLow = 0;
     atCycleDurCount  = 0;
     atLastCycleDur   = 0;
@@ -65,7 +65,6 @@ void autotuneUpdate() {
     bool above = (t > setPoint);
     if (above == atAboveSP) return;
 
-    unsigned long nowUs = micros();
     unsigned long nowMs = millis();
 
     if (!atFirstCross) {
@@ -74,7 +73,7 @@ void autotuneUpdate() {
         atTrackMax      = setPoint;
         atTrackMin      = setPoint;
         atLastCrossTime = nowMs;
-        atT1 = atT2     = nowUs;
+        atT1 = atT2     = nowMs;
         setRelay(!above);
         atState = above ? AT_COOLING : AT_HEATING;
         return;
@@ -82,7 +81,7 @@ void autotuneUpdate() {
 
     if (above) {
         // Subiu acima do SP → desliga relê
-        atT1    = nowUs;
+        atT1    = nowMs;
         atTHigh = atT1 - atT2;
         setRelay(false);
         atState = AT_COOLING;
@@ -91,7 +90,7 @@ void autotuneUpdate() {
         atTrackMax = setPoint;
     } else {
         // Desceu abaixo do SP → liga relê
-        atT2   = nowUs;
+        atT2   = nowMs;
         atTLow = atT2 - atT1;
         setRelay(true);
         atState = AT_HEATING;
@@ -103,7 +102,7 @@ void autotuneUpdate() {
 
             // Ku = 4d / (πa), d = amplitude do output / 2 = 50 (0-100%)
             float ku = 200.0f / (3.14159f * amplitude);
-            float tu = (float)(atTHigh + atTLow) / 1000000.0f; // segundos
+            float tu = (float)(atTHigh + atTLow) / 1000.0f;  // ms → segundos
 
             if (tu > 0.1f) {
                 atKuSum += ku;
