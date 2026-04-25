@@ -21,6 +21,7 @@ typedef bool     boolean;
 extern unsigned long _mockMillis;
 extern unsigned long _mockMicros;
 extern int           _mockGpioState[64];
+extern int           _mockGpioWriteCount[64];   // quantas vezes digitalWrite foi chamado por pino
 
 inline unsigned long millis() { return _mockMillis; }
 inline unsigned long micros() { return _mockMicros; }
@@ -28,7 +29,10 @@ inline void delay(unsigned long ms) { _mockMillis += ms; _mockMicros += ms * 100
 
 inline void pinMode(int, int) {}
 inline void digitalWrite(int pin, int val) {
-    if (pin >= 0 && pin < 64) _mockGpioState[pin] = val;
+    if (pin >= 0 && pin < 64) {
+        _mockGpioState[pin] = val;
+        _mockGpioWriteCount[pin]++;
+    }
 }
 inline int digitalRead(int pin) {
     return (pin >= 0 && pin < 64) ? _mockGpioState[pin] : 0;

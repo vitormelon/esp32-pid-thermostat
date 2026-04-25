@@ -5,6 +5,4 @@ void controlInit();
 void controlRun();
 void controlReset();
 void setRelay(bool on);
-
-void addToMovingAverage(float temp);
-float getMovingAverage();
+void setRelayForce(bool on);   // sempre escreve no GPIO; usar em paths de safety

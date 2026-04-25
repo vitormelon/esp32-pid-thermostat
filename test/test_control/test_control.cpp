@@ -189,26 +189,6 @@ void test_pid_with_ki_zero_does_not_grow_output_unboundedly(void) {
 }
 
 // ============================================================
-// Moving average
-// ============================================================
-
-void test_moving_average_returns_currentTemp_when_empty(void) {
-    currentTemp     = 42.5f;
-    movingAvgIndex  = 0;
-    movingAvgCount  = 0;
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 42.5f, getMovingAverage());
-}
-
-void test_moving_average_computes_correctly(void) {
-    movingAvgIndex = 0;
-    movingAvgCount = 0;
-    addToMovingAverage(10.0f);
-    addToMovingAverage(20.0f);
-    addToMovingAverage(30.0f);
-    TEST_ASSERT_FLOAT_WITHIN(0.001f, 20.0f, getMovingAverage());
-}
-
-// ============================================================
 // Runner
 // ============================================================
 
@@ -223,7 +203,5 @@ int main(int, char**) {
     RUN_TEST(test_control_run_does_nothing_when_system_inactive);
     RUN_TEST(test_control_run_does_nothing_when_sensor_failed);
     RUN_TEST(test_pid_with_ki_zero_does_not_grow_output_unboundedly);
-    RUN_TEST(test_moving_average_returns_currentTemp_when_empty);
-    RUN_TEST(test_moving_average_computes_correctly);
     return UNITY_END();
 }

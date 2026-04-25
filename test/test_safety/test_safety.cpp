@@ -173,6 +173,27 @@ void test_stuck_check_runs_before_overtemp(void) {
 }
 
 // ============================================================
+// Bug G: RELAY_STUCK não pode ser limpo por click simples (evita
+// loop safety→clear→safety se o relé continuar travado fisicamente).
+// safetyAllowsClickClear() informa ao display qual gesto é necessário.
+// ============================================================
+
+void test_allowsClickClear_true_for_sensor_fail(void) {
+    safetyError = SAFETY_SENSOR_FAIL;
+    TEST_ASSERT_TRUE(safetyAllowsClickClear());
+}
+
+void test_allowsClickClear_true_for_overtemp(void) {
+    safetyError = SAFETY_OVERTEMP;
+    TEST_ASSERT_TRUE(safetyAllowsClickClear());
+}
+
+void test_allowsClickClear_false_for_relay_stuck(void) {
+    safetyError = SAFETY_RELAY_STUCK;
+    TEST_ASSERT_FALSE(safetyAllowsClickClear());
+}
+
+// ============================================================
 // safetyClear
 // ============================================================
 
@@ -204,6 +225,9 @@ int main(int, char**) {
     RUN_TEST(test_overtemp_triggers_at_60s_if_temp_stayed_high);
     RUN_TEST(test_overtemp_does_not_trigger_if_temp_recovers_in_time);
     RUN_TEST(test_stuck_check_runs_before_overtemp);
+    RUN_TEST(test_allowsClickClear_true_for_sensor_fail);
+    RUN_TEST(test_allowsClickClear_true_for_overtemp);
+    RUN_TEST(test_allowsClickClear_false_for_relay_stuck);
     RUN_TEST(test_clear_resets_all_state);
     return UNITY_END();
 }

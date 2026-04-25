@@ -33,17 +33,11 @@ void setRelay(bool on) {
     }
 }
 
-void addToMovingAverage(float temp) {
-    movingAvgBuffer[movingAvgIndex] = temp;
-    movingAvgIndex = (movingAvgIndex + 1) % MOVING_AVG_SAMPLES;
-    if (movingAvgCount < MOVING_AVG_SAMPLES) movingAvgCount++;
-}
-
-float getMovingAverage() {
-    if (movingAvgCount == 0) return currentTemp;
-    float sum = 0;
-    for (int i = 0; i < movingAvgCount; i++) sum += movingAvgBuffer[i];
-    return sum / movingAvgCount;
+// Em paths de segurança queremos garantir o estado físico do GPIO
+// mesmo que o software ache que já está correto.
+void setRelayForce(bool on) {
+    relayState = on;
+    digitalWrite(RELAY_PIN, on ? HIGH : LOW);
 }
 
 // --- Histerese simples ---
