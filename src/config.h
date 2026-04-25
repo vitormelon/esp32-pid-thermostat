@@ -25,8 +25,9 @@
 #define TEMP_READ_INTERVAL      2000UL
 #define TEMP_CONVERSION_DELAY   800UL
 #define SENSOR_FAIL_TIMEOUT     5000UL
-#define HARD_CUTOFF_TEMP        100.0f
-#define CUTOFF_RECOVERY_TEMP    95.0f
+#define HARD_CUTOFF_TEMP        30.0f
+#define CUTOFF_RECOVERY_TEMP    25.0f
+#define OVERTEMP_DELAY_MS       60000UL
 #define TEMP_MIN_VALID          -50.0f
 #define TEMP_MAX_VALID          150.0f
 #define MOVING_AVG_SAMPLES      5

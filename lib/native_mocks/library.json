@@ -1,0 +1,6 @@
+{
+  "name": "native_mocks",
+  "version": "1.0.0",
+  "description": "Mocks de Arduino e Preferences para testes nativos no host",
+  "platforms": ["native"]
+}

@@ -43,3 +43,11 @@ bool blynkConnected = false;
 
 Preset presets[MAX_PRESETS];
 int    activePresetIndex = -1;
+
+bool          recoveryPending        = false;
+unsigned long recoveryStartMs        = 0;
+bool          recoveryChoice         = true;
+unsigned long recoveryTimerRem       = 0;
+unsigned int  recoveryTimerSet       = 0;
+bool          recoveryDecisionMade   = false;
+bool          recoveryDecisionResume = true;

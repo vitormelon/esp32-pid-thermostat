@@ -25,6 +25,7 @@
 #include "control.h"
 #include "timer_ctrl.h"
 #include "autotune.h"
+#include "safety.h"
 
 // --- Sensor ---
 static OneWire oneWire(SENSOR_PIN);
@@ -116,24 +117,8 @@ static void manageTemperature() {
 }
 
 // ============================================================
-// SEGURANÇA
+// SEGURANÇA — cleanup orquestrado quando safety dispara
 // ============================================================
-static float         cutoffTemp     = 0.0f;
-static unsigned long cutoffTime     = 0;
-static bool          stuckChecked   = false;
-
-static void triggerSafetyError(SafetyError err, float trigTemp) {
-    safetyError       = err;
-    safetyTriggerTemp = trigTemp;
-    setRelay(false);
-    systemActive = false;
-    if (autotuneIsRunning()) autotuneCancel();
-    timerStop();
-    storageSaveRecoveryState();
-    Serial.printf("[SEG] ERRO %d! Trigger=%.1f Atual=%.1f\n",
-                  err, trigTemp, currentTemp);
-}
-
 static void tryUnstickRelay() {
     Serial.println("[SEG] Tentando desgrudar rele...");
     for (int i = 0; i < SAFETY_UNSTICK_CYCLES; i++) {
@@ -147,54 +132,14 @@ static void tryUnstickRelay() {
     Serial.println("[SEG] Rele toggled. Desligado.");
 }
 
-static void checkSafety() {
-    if (safetyError != SAFETY_OK) return;
-    if (!firstValidReading) return;
-
-    // 1. Sensor fail
-    if (sensorFailed) {
-        triggerSafetyError(SAFETY_SENSOR_FAIL, currentTemp);
-        return;
-    }
-
-    // 2. Overtemp
-    if (currentTemp >= HARD_CUTOFF_TEMP) {
-        if (!hardCutoffActive) {
-            hardCutoffActive = true;
-            cutoffTemp       = currentTemp;
-            cutoffTime       = millis();
-            stuckChecked     = false;
-            setRelay(false);
-            Serial.printf("[SEG] CUTOFF! %.1f >= %.1f\n", currentTemp, HARD_CUTOFF_TEMP);
-        }
-
-        // 3. Stuck relay detection (após delay para inércia térmica)
-        if (!stuckChecked && millis() - cutoffTime >= SAFETY_STUCK_DELAY_MS) {
-            stuckChecked = true;
-            if (currentTemp > cutoffTemp + SAFETY_STUCK_THRESHOLD) {
-                tryUnstickRelay();
-                triggerSafetyError(SAFETY_RELAY_STUCK, cutoffTemp);
-                return;
-            }
-        }
-
-        // Se temp ainda >= cutoff mas não está subindo: erro de overtemp
-        if (millis() - cutoffTime >= SAFETY_STUCK_DELAY_MS && !stuckChecked) {
-            // já checado acima
-        }
-
-        // Disparar erro de overtemp se ainda acima após o delay
-        if (hardCutoffActive && millis() - cutoffTime > 5000) {
-            triggerSafetyError(SAFETY_OVERTEMP, cutoffTemp);
-            return;
-        }
-    } else if (hardCutoffActive && currentTemp < CUTOFF_RECOVERY_TEMP) {
-        hardCutoffActive = false;
-        cutoffTemp       = 0;
-        cutoffTime       = 0;
-        stuckChecked     = false;
-        Serial.println("[SEG] Cutoff liberado");
-    }
+static void onSafetyTrigger(SafetyError err, float trigTemp) {
+    if (autotuneIsRunning()) autotuneCancel();
+    displayResetAutotuneUI();
+    timerStop();
+    if (err == SAFETY_RELAY_STUCK) tryUnstickRelay();
+    storageSaveRecoveryState();
+    Serial.printf("[SEG] ERRO %d! Trigger=%.1f Atual=%.1f\n",
+                  err, trigTemp, currentTemp);
 }
 
 // ============================================================
@@ -451,6 +396,38 @@ static void manageRecoverySave() {
 }
 
 // ============================================================
+// RECOVERY APPLY (não bloqueante)
+// ============================================================
+static void applyRecovery(bool resume) {
+    if (resume) {
+        systemActive    = true;
+        timerSetMinutes = recoveryTimerSet;
+        if (recoveryTimerSet > 0 && recoveryTimerRem > 0) {
+            timerResumeFromRecovery(recoveryTimerRem);
+        }
+        controlReset();
+        systemStartMs = millis();
+        Serial.println("[RECOVERY] Ciclo retomado");
+    } else {
+        Serial.println("[RECOVERY] Ciclo descartado");
+    }
+    storageClearRecoveryState();
+    recoveryPending        = false;
+    recoveryDecisionMade   = false;
+}
+
+static void manageRecovery() {
+    if (!recoveryPending) return;
+    if (recoveryDecisionMade) {
+        applyRecovery(recoveryDecisionResume);
+        return;
+    }
+    if (millis() - recoveryStartMs >= RECOVERY_TIMEOUT_MS) {
+        applyRecovery(true);  // timeout → SIM por padrão
+    }
+}
+
+// ============================================================
 // SETUP
 // ============================================================
 void setup() {
@@ -489,27 +466,19 @@ void setup() {
 
     // 8. Controle
     controlInit();
+    safetyInit();
+    safetySetTriggerCallback(onSafetyTrigger);
 
-    // 9. Recovery check
+    // 9. Recovery check (não bloqueante: tela e decisão acontecem no loop)
     if (storageHasRecoveryState()) {
-        unsigned long recTimerRem = 0;
-        unsigned int  recTimerSet = 0;
-        storageLoadRecoveryState(recTimerRem, recTimerSet);
-
-        bool resume = displayShowRecoveryScreen();
-        if (resume) {
-            systemActive = true;
-            timerSetMinutes = recTimerSet;
-            if (recTimerSet > 0 && recTimerRem > 0) {
-                timerResumeFromRecovery(recTimerRem);
-            }
-            controlReset();
-            systemStartMs = millis();
-            Serial.println("[RECOVERY] Ciclo retomado");
-        } else {
-            Serial.println("[RECOVERY] Ciclo descartado");
-        }
-        storageClearRecoveryState();
+        storageLoadRecoveryState(recoveryTimerRem, recoveryTimerSet);
+        recoveryPending        = true;
+        recoveryStartMs        = millis();
+        recoveryChoice         = true;
+        recoveryDecisionMade   = false;
+        recoveryDecisionResume = true;
+        Serial.printf("[RECOVERY] Pendente — timerSet=%u min, trem=%lu ms\n",
+                      recoveryTimerSet, recoveryTimerRem);
     }
 
     // 10. WiFi deferred
@@ -531,12 +500,18 @@ void loop() {
     manageTemperature();
 
     // 3. Segurança
-    checkSafety();
+    safetyCheck();
 
     // 4. Controle ou Auto-tune
-    if (autotuneIsRunning()) {
+    //    AT_HEATING/AT_COOLING: autotune ativo → autotuneUpdate()
+    //    AT_DONE: aguardando confirmação do usuário → não controlar (relé fica OFF)
+    //    AT_IDLE/AT_CANCELLED: controle normal
+    AutotuneState atSt = autotuneGetState();
+    if (atSt == AT_HEATING || atSt == AT_COOLING) {
         autotuneUpdate();
-    } else {
+    } else if (atSt == AT_DONE) {
+        setRelay(false);
+    } else if (!recoveryPending) {
         controlRun();
     }
 
@@ -545,6 +520,7 @@ void loop() {
     if (timerIsExpired()) {
         systemActive = false;
         setRelay(false);
+        storageSaveRecoveryState();
         Serial.println("[TIMER] Sistema desativado por timer");
     }
 
@@ -552,7 +528,8 @@ void loop() {
     displayUpdate();
     displayGraphSample();
 
-    // 7. Recovery
+    // 7. Recovery (decisão / timeout)
+    manageRecovery();
     manageRecoverySave();
 
     // 8. WiFi + Blynk

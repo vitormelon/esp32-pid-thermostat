@@ -5,10 +5,10 @@
 #include "timer_ctrl.h"
 #include "storage.h"
 #include "control.h"
+#include "safety.h"
 #include <LiquidCrystal_I2C.h>
 #include <stdarg.h>
 #include <math.h>
-#include <esp_task_wdt.h>
 
 static LiquidCrystal_I2C lcd(LCD_ADDR, LCD_COLS, LCD_ROWS);
 
@@ -835,10 +835,29 @@ static void handleAutotuneInput(EncoderInput in) {
                 Serial.println("[AUTOTUNE] Parametros rejeitados");
             }
             systemActive = false;
+            autotuneReset();
             navState  = NAV_SCREEN;
             curScreen = SCR_AUTOTUNE;
         }
     }
+}
+
+// ============================================================
+// RECOVERY SCREEN (não bloqueante)
+// ============================================================
+
+static void renderRecovery() {
+    long elapsed = (long)(millis() - recoveryStartMs);
+    int rem = (int)((RECOVERY_TIMEOUT_MS - elapsed) / 1000);
+    if (rem < 0) rem = 0;
+
+    lcdLine(0, "Ciclo interrompido!");
+    lcdLine(1, "Continuar?     %2ds", rem);
+    lcdLine(2, "");
+    if (recoveryChoice)
+        lcdLine(3, "  [SIM]       NAO   ");
+    else
+        lcdLine(3, "   SIM       [NAO]  ");
 }
 
 // ============================================================
@@ -917,11 +936,20 @@ void displayUpdate() {
         return;
     }
 
+    if (recoveryPending) {
+        renderRecovery();
+        return;
+    }
+
     if (navState == NAV_AUTOTUNE_RUN) {
-        // Check autotune state
-        if (autotuneGetState() == AT_DONE) {
+        AutotuneState atSt = autotuneGetState();
+        if (atSt == AT_DONE) {
             navState = NAV_AUTOTUNE_RESULT;
             atAccept = true;
+        } else if (atSt == AT_CANCELLED || atSt == AT_IDLE) {
+            navState  = NAV_SCREEN;
+            curScreen = SCR_AUTOTUNE;
+            return;
         }
         renderAutotuneRun();
         return;
@@ -949,12 +977,20 @@ void displayResetNavToScreen() {
     }
 }
 
+void displayResetAutotuneUI() {
+    if (navState == NAV_AUTOTUNE_RUN || navState == NAV_AUTOTUNE_RESULT) {
+        navState  = NAV_SCREEN;
+        curScreen = SCR_AUTOTUNE;
+        selItem   = 0;
+        scrollOff = 0;
+    }
+}
+
 void displayHandleInput(EncoderInput in) {
     // Safety error: click ou long press limpa o erro
     if (safetyError != SAFETY_OK) {
         if (in.pressed || in.longPress) {
-            safetyError      = SAFETY_OK;
-            hardCutoffActive = false;
+            safetyClear();
             displaySetBacklight(true);
             curScreen = SCR_HOME;
             navState  = NAV_SCREEN;
@@ -963,9 +999,20 @@ void displayHandleInput(EncoderInput in) {
         return;
     }
 
+    // Recovery pendente: encoder escolhe SIM/NAO, click confirma
+    if (recoveryPending) {
+        if (in.delta) recoveryChoice = !recoveryChoice;
+        if (in.pressed) {
+            recoveryDecisionResume = recoveryChoice;
+            recoveryDecisionMade   = true;
+        }
+        return;
+    }
+
     if (in.longPress) {
         if (navState == NAV_AUTOTUNE_RUN || navState == NAV_AUTOTUNE_RESULT) {
             if (navState == NAV_AUTOTUNE_RUN) autotuneCancel();
+            else autotuneReset();
             systemActive = false;
             navState  = NAV_SCREEN;
             curScreen = SCR_AUTOTUNE;
@@ -1032,27 +1079,3 @@ bool displayIsBacklightOn() {
     return backlightState;
 }
 
-bool displayShowRecoveryScreen() {
-    unsigned long start = millis();
-    bool choice = true;
-
-    while (millis() - start < RECOVERY_TIMEOUT_MS) {
-        esp_task_wdt_reset();
-        int rem = (RECOVERY_TIMEOUT_MS - (millis() - start)) / 1000;
-
-        lcdLine(0, "Ciclo interrompido!");
-        lcdLine(1, "Continuar?     %2ds", rem);
-        lcdLine(2, "");
-        if (choice)
-            lcdLine(3, "  [SIM]       NAO   ");
-        else
-            lcdLine(3, "   SIM       [NAO]  ");
-
-        EncoderInput in = encoderRead();
-        if (in.delta) choice = !choice;
-        if (in.pressed) return choice;
-
-        delay(50);
-    }
-    return true;
-}

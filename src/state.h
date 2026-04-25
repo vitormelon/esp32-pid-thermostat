@@ -68,3 +68,12 @@ extern bool blynkConnected;
 // --- Presets ---
 extern Preset presets[MAX_PRESETS];
 extern int    activePresetIndex;
+
+// --- Recovery (não bloqueante) ---
+extern bool          recoveryPending;
+extern unsigned long recoveryStartMs;
+extern bool          recoveryChoice;
+extern unsigned long recoveryTimerRem;
+extern unsigned int  recoveryTimerSet;
+extern bool          recoveryDecisionMade;
+extern bool          recoveryDecisionResume;

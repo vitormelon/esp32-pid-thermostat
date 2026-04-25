@@ -69,15 +69,17 @@ static void computePID() {
     pidFilteredDeriv = DERIV_FILTER_ALPHA * rawDeriv
                      + (1.0f - DERIV_FILTER_ALPHA) * pidFilteredDeriv;
 
-    bool satHigh = (pidOutput >= 100.0f);
-    bool satLow  = (pidOutput <= 0.0f);
-    if ((!satHigh && !satLow) ||
-        (satHigh && error < 0.0f) ||
-        (satLow  && error > 0.0f)) {
-        pidIntegral += error * dt;
-    }
+    if (pidKi <= 0.0f) {
+        pidIntegral = 0.0f;
+    } else {
+        bool satHigh = (pidOutput >= 100.0f);
+        bool satLow  = (pidOutput <= 0.0f);
+        if ((!satHigh && !satLow) ||
+            (satHigh && error < 0.0f) ||
+            (satLow  && error > 0.0f)) {
+            pidIntegral += error * dt;
+        }
 
-    if (pidKi > 0.0f) {
         float maxInt = 50.0f / pidKi;
         pidIntegral = constrain(pidIntegral, -maxInt, maxInt);
     }
