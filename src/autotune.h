@@ -12,6 +12,7 @@ enum AutotuneState {
 void autotuneStart();
 void autotuneUpdate();
 void autotuneCancel();
+void autotuneReset();
 
 bool           autotuneIsRunning();
 AutotuneState  autotuneGetState();

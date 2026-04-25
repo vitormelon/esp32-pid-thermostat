@@ -157,6 +157,10 @@ void autotuneCancel() {
     Serial.println("[AUTOTUNE] Cancelado");
 }
 
+void autotuneReset() {
+    atState = AT_IDLE;
+}
+
 bool          autotuneIsRunning()     { return atState == AT_HEATING || atState == AT_COOLING; }
 AutotuneState autotuneGetState()      { return atState; }
 int           autotuneGetCycle()      { return atCompletedCycles; }

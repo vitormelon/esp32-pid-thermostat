@@ -7,7 +7,7 @@ void displayUpdate();
 void displayHandleInput(EncoderInput in);
 void displaySetBacklight(bool on);
 bool displayIsBacklightOn();
-bool displayShowRecoveryScreen();
 void displayGraphSample();
 void displayResetNavToScreen();
+void displayResetAutotuneUI();
 bool displayIsSafetyScreen();

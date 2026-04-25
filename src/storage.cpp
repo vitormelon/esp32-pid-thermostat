@@ -2,8 +2,91 @@
 #include "state.h"
 #include "config.h"
 #include <Preferences.h>
+#include <math.h>
 
 static Preferences prefs;
+
+// ============================================================
+// CHECK-BEFORE-WRITE HELPERS
+// ============================================================
+// Lê valor atual do NVS e só escreve se diferente. Reduz desgaste do flash.
+// O wear-leveling do flash é feito automaticamente pela camada NVS do ESP-IDF
+// (escritas são distribuídas entre múltiplos setores físicos).
+
+static const float NVS_FLOAT_EPSILON = 0.0001f;
+
+// Retorna true se escreveu, false se sem mudança.
+static bool saveFloatIfChanged(const char* ns, const char* key, float val) {
+    prefs.begin(ns, true);
+    bool exists = prefs.isKey(key);
+    float cur = exists ? prefs.getFloat(key, 0.0f) : 0.0f;
+    prefs.end();
+    if (exists && fabsf(cur - val) < NVS_FLOAT_EPSILON) return false;
+    prefs.begin(ns, false);
+    prefs.putFloat(key, val);
+    prefs.end();
+    return true;
+}
+
+static bool saveIntIfChanged(const char* ns, const char* key, int val) {
+    prefs.begin(ns, true);
+    bool exists = prefs.isKey(key);
+    int cur = exists ? prefs.getInt(key, 0) : 0;
+    prefs.end();
+    if (exists && cur == val) return false;
+    prefs.begin(ns, false);
+    prefs.putInt(key, val);
+    prefs.end();
+    return true;
+}
+
+static bool saveUIntIfChanged(const char* ns, const char* key, unsigned int val) {
+    prefs.begin(ns, true);
+    bool exists = prefs.isKey(key);
+    unsigned int cur = exists ? prefs.getUInt(key, 0) : 0;
+    prefs.end();
+    if (exists && cur == val) return false;
+    prefs.begin(ns, false);
+    prefs.putUInt(key, val);
+    prefs.end();
+    return true;
+}
+
+static bool saveULongIfChanged(const char* ns, const char* key, unsigned long val) {
+    prefs.begin(ns, true);
+    bool exists = prefs.isKey(key);
+    unsigned long cur = exists ? prefs.getULong(key, 0UL) : 0UL;
+    prefs.end();
+    if (exists && cur == val) return false;
+    prefs.begin(ns, false);
+    prefs.putULong(key, val);
+    prefs.end();
+    return true;
+}
+
+static bool saveBoolIfChanged(const char* ns, const char* key, bool val) {
+    prefs.begin(ns, true);
+    bool exists = prefs.isKey(key);
+    bool cur = exists ? prefs.getBool(key, false) : false;
+    prefs.end();
+    if (exists && cur == val) return false;
+    prefs.begin(ns, false);
+    prefs.putBool(key, val);
+    prefs.end();
+    return true;
+}
+
+static bool saveStringIfChanged(const char* ns, const char* key, const char* val) {
+    prefs.begin(ns, true);
+    bool exists = prefs.isKey(key);
+    String cur = exists ? prefs.getString(key, "") : String("");
+    prefs.end();
+    if (exists && cur.equals(val)) return false;
+    prefs.begin(ns, false);
+    prefs.putString(key, val);
+    prefs.end();
+    return true;
+}
 
 // ============================================================
 // SETTINGS
@@ -43,55 +126,52 @@ void storageLoadSettings() {
                   pidKp, pidKi, pidKd, pidWindowSize, pidThreshold);
 }
 
-static void saveFloat(const char* key, float val) {
-    prefs.begin("oven", false);
-    prefs.putFloat(key, val);
-    prefs.end();
-}
-
 void storageSaveSetPoint() {
-    saveFloat("sp", setPoint);
-    Serial.printf("[NVS] SP=%.1f\n", setPoint);
+    if (saveFloatIfChanged("oven", "sp", setPoint))
+        Serial.printf("[NVS] SP=%.1f\n", setPoint);
 }
 
 void storageSaveOffset() {
-    saveFloat("off", offset);
-    Serial.printf("[NVS] Off=%.1f\n", offset);
+    if (saveFloatIfChanged("oven", "off", offset))
+        Serial.printf("[NVS] Off=%.1f\n", offset);
 }
 
 void storageSaveControlMode() {
-    prefs.begin("oven", false);
-    prefs.putInt("mode", controlMode);
-    prefs.end();
-    Serial.printf("[NVS] Mode=%d\n", controlMode);
+    if (saveIntIfChanged("oven", "mode", controlMode))
+        Serial.printf("[NVS] Mode=%d\n", controlMode);
 }
 
-void storageSavePidKp()  { saveFloat("kp", pidKp);  Serial.printf("[NVS] Kp=%.3f\n", pidKp); }
-void storageSavePidKi()  { saveFloat("ki", pidKi);  Serial.printf("[NVS] Ki=%.4f\n", pidKi); }
-void storageSavePidKd()  { saveFloat("kd", pidKd);  Serial.printf("[NVS] Kd=%.1f\n", pidKd); }
+void storageSavePidKp() {
+    if (saveFloatIfChanged("oven", "kp", pidKp))
+        Serial.printf("[NVS] Kp=%.3f\n", pidKp);
+}
+
+void storageSavePidKi() {
+    if (saveFloatIfChanged("oven", "ki", pidKi))
+        Serial.printf("[NVS] Ki=%.4f\n", pidKi);
+}
+
+void storageSavePidKd() {
+    if (saveFloatIfChanged("oven", "kd", pidKd))
+        Serial.printf("[NVS] Kd=%.1f\n", pidKd);
+}
 
 void storageSavePidWindow() {
-    prefs.begin("oven", false);
-    prefs.putULong("win", pidWindowSize);
-    prefs.end();
-    Serial.printf("[NVS] Win=%lums\n", pidWindowSize);
+    if (saveULongIfChanged("oven", "win", pidWindowSize))
+        Serial.printf("[NVS] Win=%lums\n", pidWindowSize);
 }
 
 void storageSavePidThreshold() {
-    saveFloat("thr", pidThreshold);
-    Serial.printf("[NVS] Thr=%.0f%%\n", pidThreshold);
+    if (saveFloatIfChanged("oven", "thr", pidThreshold))
+        Serial.printf("[NVS] Thr=%.0f%%\n", pidThreshold);
 }
 
 void storageSaveBacklightTimeout() {
-    prefs.begin("oven", false);
-    prefs.putInt("bl", backlightTimeoutIndex);
-    prefs.end();
+    saveIntIfChanged("oven", "bl", backlightTimeoutIndex);
 }
 
 void storageSaveTimerMinutes() {
-    prefs.begin("oven", false);
-    prefs.putUInt("tmr", timerSetMinutes);
-    prefs.end();
+    saveUIntIfChanged("oven", "tmr", timerSetMinutes);
 }
 
 // ============================================================
@@ -99,9 +179,7 @@ void storageSaveTimerMinutes() {
 // ============================================================
 
 void storageSaveGraphScale(int scale) {
-    prefs.begin("oven", false);
-    prefs.putInt("gscale", scale);
-    prefs.end();
+    saveIntIfChanged("oven", "gscale", scale);
 }
 
 int storageLoadGraphScale() {
@@ -116,9 +194,7 @@ int storageLoadGraphScale() {
 // ============================================================
 
 void storageSaveFlip() {
-    prefs.begin("oven", false);
-    prefs.putBool("flip", lcdFlipped);
-    prefs.end();
+    saveBoolIfChanged("oven", "flip", lcdFlipped);
 }
 
 // ============================================================
@@ -160,23 +236,22 @@ void storageSavePreset(int index) {
     if (index < 0 || index >= MAX_PRESETS) return;
     Preset& p = presets[index];
     char key[8];
+    bool anyChange = false;
 
-    prefs.begin("presets", false);
     snprintf(key, sizeof(key), "p%du", index);
-    prefs.putBool(key, p.used);
+    if (saveBoolIfChanged("presets", key, p.used)) anyChange = true;
     snprintf(key, sizeof(key), "p%dn", index);
-    prefs.putString(key, p.name);
+    if (saveStringIfChanged("presets", key, p.name)) anyChange = true;
     snprintf(key, sizeof(key), "p%dkp", index);
-    prefs.putFloat(key, p.kp);
+    if (saveFloatIfChanged("presets", key, p.kp)) anyChange = true;
     snprintf(key, sizeof(key), "p%dki", index);
-    prefs.putFloat(key, p.ki);
+    if (saveFloatIfChanged("presets", key, p.ki)) anyChange = true;
     snprintf(key, sizeof(key), "p%dkd", index);
-    prefs.putFloat(key, p.kd);
+    if (saveFloatIfChanged("presets", key, p.kd)) anyChange = true;
     snprintf(key, sizeof(key), "p%dw", index);
-    prefs.putULong(key, p.windowMs);
-    prefs.end();
+    if (saveULongIfChanged("presets", key, p.windowMs)) anyChange = true;
 
-    Serial.printf("[NVS] Preset %d salvo: '%s'\n", index, p.name);
+    if (anyChange) Serial.printf("[NVS] Preset %d salvo: '%s'\n", index, p.name);
 }
 
 void storageDeletePreset(int index) {
@@ -185,10 +260,8 @@ void storageDeletePreset(int index) {
     memset(presets[index].name, 0, sizeof(presets[index].name));
 
     char key[8];
-    prefs.begin("presets", false);
     snprintf(key, sizeof(key), "p%du", index);
-    prefs.putBool(key, false);
-    prefs.end();
+    saveBoolIfChanged("presets", key, false);
 
     if (activePresetIndex == index) activePresetIndex = -1;
     Serial.printf("[NVS] Preset %d removido\n", index);
@@ -197,12 +270,34 @@ void storageDeletePreset(int index) {
 // ============================================================
 // RECOVERY
 // ============================================================
+// Salva estado para recuperação após queda de energia.
+// Tolerância no timer remaining (60s) evita escritas frequentes durante
+// countdown sem perder muita precisão na recuperação.
+
+#define RECOVERY_TREM_TOLERANCE_MS 60000UL
 
 void storageSaveRecoveryState() {
+    prefs.begin("recov", true);
+    bool curActive = prefs.getBool("active", false);
+    unsigned long curRem = prefs.getULong("trem", 0);
+    unsigned int curSet = prefs.getUInt("tset", 0);
+    prefs.end();
+
+    bool activeChanged = (curActive != systemActive);
+    bool setChanged    = (curSet != timerSetMinutes);
+    unsigned long diff = (curRem > timerRemainingMs)
+                         ? (curRem - timerRemainingMs)
+                         : (timerRemainingMs - curRem);
+    bool remChanged    = (diff > RECOVERY_TREM_TOLERANCE_MS);
+
+    // Sempre persistir transições críticas (ativar/desativar) imediatamente,
+    // mesmo que trem ainda esteja dentro da tolerância.
+    if (!activeChanged && !setChanged && !remChanged) return;
+
     prefs.begin("recov", false);
-    prefs.putBool("active", systemActive);
-    prefs.putULong("trem", timerRemainingMs);
-    prefs.putUInt("tset", timerSetMinutes);
+    if (activeChanged) prefs.putBool("active", systemActive);
+    if (setChanged)    prefs.putUInt("tset", timerSetMinutes);
+    if (activeChanged || setChanged || remChanged) prefs.putULong("trem", timerRemainingMs);
     prefs.end();
 }
 
@@ -221,7 +316,5 @@ void storageLoadRecoveryState(unsigned long &timerRemaining, unsigned int &timer
 }
 
 void storageClearRecoveryState() {
-    prefs.begin("recov", false);
-    prefs.putBool("active", false);
-    prefs.end();
+    saveBoolIfChanged("recov", "active", false);
 }
