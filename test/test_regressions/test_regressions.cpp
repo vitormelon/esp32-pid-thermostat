@@ -276,6 +276,92 @@ void test_bug7_recovery_state_machine_has_required_globals(void) {
 }
 
 // ============================================================
+// BUG #E: setRelay() pula digitalWrite quando relayState já está no
+// valor desejado (otimização para reduzir spam). Em paths de safety
+// queremos forçar o GPIO LOW por garantia. Pós-fix: setRelayForce()
+// sempre escreve no pino, usado por safety.doTrigger().
+// ============================================================
+
+void test_bugE_safety_forces_digitalWrite_even_when_relayState_already_off(void) {
+    // Cenário: software pensa que relé está OFF, mas queremos garantir
+    // que o GPIO foi efetivamente escrito (defesa contra estado dessincronizado)
+    relayState = false;
+    _mockGpioState[RELAY_PIN] = HIGH;       // Hardware "drift": pino quedou HIGH
+    _mockGpioWriteCount[RELAY_PIN] = 0;
+
+    sensorFailed      = true;
+    firstValidReading = true;
+    safetyError       = SAFETY_OK;
+    safetyInit();
+    safetyCheck();                          // dispara SENSOR_FAIL
+
+    TEST_ASSERT_EQUAL(SAFETY_SENSOR_FAIL, safetyError);
+    TEST_ASSERT_TRUE(_mockGpioWriteCount[RELAY_PIN] > 0);  // forçou escrita
+    TEST_ASSERT_EQUAL_INT(LOW, _mockGpioState[RELAY_PIN]); // pino LOW garantido
+}
+
+// ============================================================
+// BUG #H: autotune usava micros() que faz overflow em ~71 min no ESP32
+// (uint32_t). Pós-fix: usa millis() (overflow em ~49 dias). Não reproduz
+// o overflow no host (long é 64 bits), mas valida que autotune completa
+// com ciclos longos (~6 min cada) — situação típica de forno doméstico.
+// ============================================================
+
+void test_bugH_autotune_completes_with_long_cycles(void) {
+    setPoint    = 100.0f;
+    currentTemp = 80.0f;
+    autotuneStart();
+
+    // Ciclos longos: ~6 min cada semi-ciclo (sobe 20°C, desce 20°C)
+    // → total ~12 min/ciclo × 6 ciclos = ~72 min (passa do overflow do micros)
+    for (int cycle = 0; cycle < 8 && autotuneGetState() != AT_DONE; cycle++) {
+        for (int i = 0; i < 30; i++) {
+            mockAdvanceMs(12000);                  // 12s por sample
+            currentTemp = 80.0f + i * 0.8f;        // sobe 80→104
+            newTempReading = true;
+            autotuneUpdate();
+        }
+        for (int i = 0; i < 30; i++) {
+            mockAdvanceMs(12000);
+            currentTemp = 104.0f - i * 0.8f;       // desce 104→80
+            newTempReading = true;
+            autotuneUpdate();
+        }
+    }
+    TEST_ASSERT_EQUAL(AT_DONE, autotuneGetState());
+    // Ganhos sugeridos finitos (sanidade)
+    TEST_ASSERT_TRUE(autotuneGetSuggestedKp() > 0.0f);
+    TEST_ASSERT_FALSE(isnan(autotuneGetSuggestedKp()));
+    TEST_ASSERT_FALSE(isinf(autotuneGetSuggestedKp()));
+}
+
+// ============================================================
+// BUG #F: applyRecovery zerava só recoveryPending/DecisionMade,
+// deixando recoveryStartMs/Choice/TimerRem/TimerSet/DecisionResume com
+// lixo do ciclo anterior. Pós-fix: recoveryReset() limpa tudo.
+// ============================================================
+
+void test_bugF_recoveryReset_clears_all_recovery_globals(void) {
+    recoveryPending        = true;
+    recoveryStartMs        = 1234567UL;
+    recoveryChoice         = false;
+    recoveryTimerRem       = 99999UL;
+    recoveryTimerSet       = 42;
+    recoveryDecisionMade   = true;
+    recoveryDecisionResume = false;
+
+    recoveryReset();
+
+    TEST_ASSERT_FALSE(recoveryPending);
+    TEST_ASSERT_EQUAL_UINT32(0, recoveryStartMs);
+    TEST_ASSERT_TRUE(recoveryChoice);          // default: SIM
+    TEST_ASSERT_EQUAL_UINT32(0, recoveryTimerRem);
+    TEST_ASSERT_EQUAL_UINT(0, recoveryTimerSet);
+    TEST_ASSERT_FALSE(recoveryDecisionMade);
+    TEST_ASSERT_TRUE(recoveryDecisionResume);  // default: SIM
+}
+
+// ============================================================
 // BUG #8: NVS escrevia mesmo quando o valor não mudou — desgaste
 // desnecessário do flash. Pós-fix: storageSave* faz read-then-compare,
 // só escreve se diferente.
@@ -325,6 +411,9 @@ int main(int, char**) {
     RUN_TEST(test_bug5_pid_with_ki_zero_does_not_accumulate_windup);
     RUN_TEST(test_bug6_recovery_save_persists_systemActive_change);
     RUN_TEST(test_bug7_recovery_state_machine_has_required_globals);
+    RUN_TEST(test_bugE_safety_forces_digitalWrite_even_when_relayState_already_off);
+    RUN_TEST(test_bugH_autotune_completes_with_long_cycles);
+    RUN_TEST(test_bugF_recoveryReset_clears_all_recovery_globals);
     RUN_TEST(test_bug8_nvs_skips_write_when_value_unchanged);
     RUN_TEST(test_bug8_nvs_reads_before_write_for_comparison);
     return UNITY_END();

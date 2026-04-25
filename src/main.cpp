@@ -44,9 +44,10 @@ static int           wfRetryCount     = 0;
 static unsigned long wfStateTime      = 0;
 
 // --- Blynk ---
-static bool          blynkConfigured  = false;
-static unsigned long lastBlynkRetry   = 0;
-static unsigned long lastBlynkSend    = 0;
+static bool          blynkConfigured    = false;
+static unsigned long lastBlynkRetry     = 0;
+static unsigned long lastBlynkSend      = 0;
+static unsigned long blynkRetryInterval = BLYNK_RETRY_INTERVAL_MIN;
 
 // --- Backlight ---
 static bool          blOn             = true;
@@ -108,7 +109,6 @@ static void manageTemperature() {
                         firstValidReading = true;
                         Serial.printf("[TEMP] Primeira leitura: %.2f%cC\n", t, 0xB0);
                     }
-                    addToMovingAverage(t);
                     Serial.printf("[TEMP] %.2f%cC\n", t, 0xB0);
                 }
             }
@@ -226,7 +226,11 @@ static void sendBlynkData() {
 }
 
 static void manageBlynk() {
-    if (WiFi.status() != WL_CONNECTED) return;
+    if (WiFi.status() != WL_CONNECTED) {
+        // Reset backoff: assim que WiFi voltar, primeira tentativa é rápida.
+        blynkRetryInterval = BLYNK_RETRY_INTERVAL_MIN;
+        return;
+    }
 
     if (!blynkConfigured) {
         Blynk.config(BLYNK_AUTH_TOKEN);
@@ -234,13 +238,20 @@ static void manageBlynk() {
     }
 
     if (!Blynk.connected()) {
-        if (millis() - lastBlynkRetry >= BLYNK_RETRY_INTERVAL) {
-            Serial.println("[BLYNK] Tentando conectar...");
+        if (millis() - lastBlynkRetry >= blynkRetryInterval) {
+            Serial.printf("[BLYNK] Tentando conectar... (proxima retry em %lus)\n",
+                          blynkRetryInterval / 1000);
             Blynk.connect(BLYNK_CONNECT_TIMEOUT_MS);
             lastBlynkRetry = millis();
+            // Backoff exponencial: dobra até o máximo
+            unsigned long next = blynkRetryInterval * 2;
+            blynkRetryInterval = (next > BLYNK_RETRY_INTERVAL_MAX)
+                                  ? BLYNK_RETRY_INTERVAL_MAX
+                                  : next;
         }
     } else {
-        blynkConnected = true;
+        blynkConnected     = true;
+        blynkRetryInterval = BLYNK_RETRY_INTERVAL_MIN;  // reset enquanto conectado
         Blynk.run();
         sendBlynkData();
     }
@@ -412,8 +423,7 @@ static void applyRecovery(bool resume) {
         Serial.println("[RECOVERY] Ciclo descartado");
     }
     storageClearRecoveryState();
-    recoveryPending        = false;
-    recoveryDecisionMade   = false;
+    recoveryReset();
 }
 
 static void manageRecovery() {

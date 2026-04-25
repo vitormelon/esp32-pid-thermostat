@@ -6,10 +6,6 @@ bool  firstValidReading = false;
 bool  newTempReading    = false;
 unsigned long lastValidTempTime = 0;
 
-float movingAvgBuffer[MOVING_AVG_SAMPLES] = {0};
-int   movingAvgIndex = 0;
-int   movingAvgCount = 0;
-
 float setPoint    = DEFAULT_SETPOINT;
 float offset      = DEFAULT_OFFSET;
 int   controlMode = MODE_HYSTERESIS;
@@ -51,3 +47,13 @@ unsigned long recoveryTimerRem       = 0;
 unsigned int  recoveryTimerSet       = 0;
 bool          recoveryDecisionMade   = false;
 bool          recoveryDecisionResume = true;
+
+void recoveryReset() {
+    recoveryPending        = false;
+    recoveryStartMs        = 0;
+    recoveryChoice         = true;
+    recoveryTimerRem       = 0;
+    recoveryTimerSet       = 0;
+    recoveryDecisionMade   = false;
+    recoveryDecisionResume = true;
+}
