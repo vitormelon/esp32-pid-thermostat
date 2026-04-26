@@ -18,6 +18,10 @@
 #define LCD_ADDR            0x3F
 #define LCD_COLS            20
 #define LCD_ROWS            4
+// Frequência do barramento I2C. 100kHz é seguro para qualquer fiação.
+// 400kHz funciona com fios curtos (<10cm) e bons pull-ups (4.7kΩ externos).
+// Se a tela exibir lixo após mudança, reduza para 100000UL.
+#define I2C_FREQ_HZ         100000UL
 
 // ============================================================
 // TEMPERATURE
@@ -78,7 +82,9 @@
 // ============================================================
 #define LONG_PRESS_MS           1000UL
 #define BL_WAKE_DELAY_MS        100UL
-#define ENCODER_DEBOUNCE_MS     4
+// Aumentado de 4ms para 20ms: encoders mecânicos baratos podem fazer
+// bounce de 5-15ms. Latência percebida não muda (ainda <1 frame de UI).
+#define ENCODER_DEBOUNCE_MS     20
 #define ENCODER_CLICK_MS        5
 #define ENCODER_STEPS_PER_DETENT 4
 

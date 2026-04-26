@@ -1,16 +1,24 @@
 #include "encoder.h"
+#include "encoder_logic.h"
 #include "config.h"
 #include <ESP32Encoder.h>
 
 static ESP32Encoder enc;
 static int accumSteps = 0;
 
-// Button state (manual, sem OneButton)
-static bool     btnLast       = true;
-static bool     btnDown       = false;
-static bool     longFired     = false;
-static unsigned long btnDownTime     = 0;
-static unsigned long lastBtnChange   = 0;
+// Estado do botão (state machine pura, definida em encoder_logic.{h,cpp})
+static EncoderButtonState btnState;
+
+// ISR captura cada borda no pino do botão e atualiza essas variáveis volatile.
+// O loop/task lê e processa via encoderButtonTick(), evitando depender de polling
+// para detectar pulsos curtos quando o loop está ocupado.
+static volatile bool          btnRawIsr     = true;        // estado mais recente do pino
+static volatile unsigned long btnIsrEdgeMs  = 0;           // timestamp da última borda
+
+static void IRAM_ATTR onButtonChange() {
+    btnRawIsr    = (digitalRead(ENCODER_SW_PIN) != 0);
+    btnIsrEdgeMs = millis();
+}
 
 void encoderInit() {
     ESP32Encoder::useInternalWeakPullResistors = UP;
@@ -19,7 +27,10 @@ void encoderInit() {
     enc.clearCount();
 
     pinMode(ENCODER_SW_PIN, INPUT_PULLUP);
-    Serial.println("[ENC] ESP32Encoder (PCNT) + botao direto");
+    btnRawIsr = (digitalRead(ENCODER_SW_PIN) != 0);
+    attachInterrupt(digitalPinToInterrupt(ENCODER_SW_PIN), onButtonChange, CHANGE);
+
+    Serial.println("[ENC] ESP32Encoder (PCNT) + botao via ISR");
 }
 
 EncoderInput encoderRead() {
@@ -32,38 +43,13 @@ EncoderInput encoderRead() {
     in.delta = accumSteps / ENCODER_STEPS_PER_DETENT;
     accumSteps %= ENCODER_STEPS_PER_DETENT;
 
-    // --- Botão (leitura direta, click instantâneo na soltura) ---
-    bool rawBtn = digitalRead(ENCODER_SW_PIN);
+    // --- Botão (state machine pura) ---
+    // Lê estado capturado pela ISR. Em ESP32, leitura de um word volatile é atômica.
+    bool rawHigh = btnRawIsr;
+    EncoderButtonEvent ev = encoderButtonTick(btnState, millis(), rawHigh,
+                                              ENCODER_DEBOUNCE_MS, LONG_PRESS_MS);
+    in.pressed   = ev.pressed;
+    in.longPress = ev.longPress;
 
-    // Debounce
-    if (rawBtn != btnLast && millis() - lastBtnChange < ENCODER_DEBOUNCE_MS) {
-        rawBtn = btnLast;
-    }
-    if (rawBtn != btnLast) {
-        lastBtnChange = millis();
-    }
-
-    // Press down
-    if (!rawBtn && btnLast) {
-        btnDownTime = millis();
-        btnDown     = true;
-        longFired   = false;
-    }
-
-    // Long press (enquanto segurado)
-    if (!rawBtn && btnDown && !longFired && millis() - btnDownTime >= LONG_PRESS_MS) {
-        in.longPress = true;
-        longFired    = true;
-    }
-
-    // Release → click instantâneo
-    if (rawBtn && !btnLast && btnDown) {
-        btnDown = false;
-        if (!longFired) {
-            in.pressed = true;
-        }
-    }
-
-    btnLast = rawBtn;
     return in;
 }

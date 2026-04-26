@@ -7,6 +7,7 @@
 #include "control.h"
 #include "safety.h"
 #include <LiquidCrystal_I2C.h>
+#include <Wire.h>
 #include <stdarg.h>
 #include <math.h>
 
@@ -66,17 +67,58 @@ enum CfgItem {
 static const char CHARSET[] = CHARSET_STR;
 
 // ============================================================
-// UTILITIES
+// UTILITIES — diff redraw
 // ============================================================
-static void lcdFlush(int row, char* buf) {
+// Buffer da última tela enviada ao LCD. Inicializado com 0xFF (sentinela
+// fora do ASCII imprimível) para que a primeira escrita SEMPRE redesenhe
+// completamente. displayInvalidate() reseta o buffer.
+static char screenBuffer[LCD_ROWS][LCD_COLS];
+
+void displayInvalidate() {
+    for (int r = 0; r < LCD_ROWS; r++)
+        for (int c = 0; c < LCD_COLS; c++)
+            screenBuffer[r][c] = (char)0xFF;
+}
+
+// Escreve um range contíguo [start, end) de buf na linha física, aplicando flip.
+static void lcdWriteRange(int physRow, const char* buf, int start, int end) {
+    int physCol = lcdFlipped ? (LCD_COLS - end) : start;
+    lcd.setCursor(physCol, physRow);
     if (lcdFlipped) {
-        row = LCD_ROWS - 1 - row;
-        for (int i = 0; i < LCD_COLS / 2; i++) {
-            char t = buf[i]; buf[i] = buf[LCD_COLS - 1 - i]; buf[LCD_COLS - 1 - i] = t;
-        }
+        for (int j = end - 1; j >= start; j--) lcd.write((uint8_t)buf[j]);
+    } else {
+        for (int j = start; j < end; j++) lcd.write((uint8_t)buf[j]);
     }
-    lcd.setCursor(0, row);
-    lcd.print(buf);
+}
+
+// lcdFlush recebe `buf` em formato LÓGICO (pré-flip) com exatamente LCD_COLS chars
+// e escreve no LCD apenas os caracteres que mudaram em relação ao buffer interno.
+static void lcdFlush(int row, const char* buf) {
+    int physRow = lcdFlipped ? (LCD_ROWS - 1 - row) : row;
+
+    int i = 0;
+    while (i < LCD_COLS) {
+        // Avança por caracteres iguais
+        while (i < LCD_COLS && buf[i] == screenBuffer[row][i]) i++;
+        if (i >= LCD_COLS) break;
+
+        // Marca o início de um run de diferenças
+        int start = i;
+        while (i < LCD_COLS && buf[i] != screenBuffer[row][i]) i++;
+        int end = i;
+
+        lcdWriteRange(physRow, buf, start, end);
+        for (int j = start; j < end; j++) screenBuffer[row][j] = buf[j];
+    }
+}
+
+// Exposta no header para testes — formata e chama lcdFlush diretamente.
+void displayLcdLineForTest(int row, const char* text) {
+    char buf[LCD_COLS];
+    int len = 0;
+    while (text[len] && len < LCD_COLS) { buf[len] = text[len]; len++; }
+    while (len < LCD_COLS) buf[len++] = ' ';
+    lcdFlush(row, buf);
 }
 
 static void lcdFlushBytes(int row, uint8_t* data, int len) {
@@ -907,6 +949,8 @@ bool displayIsSafetyScreen() {
 // ============================================================
 
 void displayInit() {
+    Wire.begin();
+    Wire.setClock(I2C_FREQ_HZ);
     lcd.init();
     lcd.backlight();
     pinMode(LCD_BACKLIGHT_PIN, OUTPUT);
@@ -918,6 +962,7 @@ void displayInit() {
     selItem       = 0;
     graphScaleIdx = storageLoadGraphScale();
 
+    displayInvalidate();           // garante full redraw da tela inicial
     lcd.clear();
     lcdLine(0, "  PID THERMOSTAT    ");
     lcdLine(1, "   Iniciando...     ");
@@ -933,6 +978,20 @@ void displayUpdate() {
     if (millis() - lastBlinkMs >= BLINK_INTERVAL_MS) {
         blinkOn = !blinkOn;
         lastBlinkMs = millis();
+    }
+
+    // Detecta transição de "modo de tela" e invalida o buffer para
+    // forçar redraw completo. Telas têm layouts diferentes; sem isso o diff
+    // tentaria comparar com lixo da tela anterior.
+    static int lastTopMode = -1;
+    int topMode = (safetyError != SAFETY_OK)        ? 100 :
+                  (recoveryPending)                  ? 101 :
+                  (navState == NAV_AUTOTUNE_RUN)     ? 102 :
+                  (navState == NAV_AUTOTUNE_RESULT)  ? 103 :
+                  (int)curScreen;
+    if (topMode != lastTopMode) {
+        displayInvalidate();
+        lastTopMode = topMode;
     }
 
     if (safetyError != SAFETY_OK) {
