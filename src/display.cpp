@@ -479,22 +479,20 @@ static void renderPresets() {
 
     if (navState == NAV_CHAR_EDIT) {
         lcdLine(0, "  Nome do Preset    ");
-        // Name with blinking char
+        // Nome SEM piscar — a letra editada fica sempre visível.
+        // Apenas o ^ na linha de baixo indica a posição.
         char nameBuf[21];
         char display[PRESET_NAME_MAX_LEN + 1];
         memcpy(display, editName, PRESET_NAME_MAX_LEN + 1);
-        if (editCharPos < PRESET_NAME_MAX_LEN && !blinkOn) {
-            display[editCharPos] = '_';
-        }
-        // Pad with underscores for unused positions
+        // Posições ainda não preenchidas viram '_' fixo (visual de "vazio").
         for (int i = strlen(editName); i < PRESET_NAME_MAX_LEN; i++) {
-            if (i != editCharPos || blinkOn) display[i] = '_';
+            display[i] = '_';
         }
         display[PRESET_NAME_MAX_LEN] = '\0';
         bool okSel = (editCharPos >= PRESET_NAME_MAX_LEN);
         snprintf(nameBuf, 21, " %s %s", display, okSel ? "[OK]" : " OK ");
         lcdLine(2, "%s", nameBuf);
-        // Cursor line
+        // Linha do cursor: apenas o ^
         char curLine[21];
         memset(curLine, ' ', 20);
         curLine[20] = '\0';
