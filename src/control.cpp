@@ -2,6 +2,20 @@
 #include "state.h"
 #include "config.h"
 
+// Lock crítico para mudanças no estado do relé. setRelay/setRelayForce podem
+// ser chamados de múltiplas tasks (control loop, display input, network).
+// Em ESP32: portMUX_TYPE (spinlock leve, atomic entre cores).
+// No host (testes): no-op.
+#ifdef ARDUINO_ARCH_ESP32
+  #include "freertos/FreeRTOS.h"
+  static portMUX_TYPE relayMux = portMUX_INITIALIZER_UNLOCKED;
+  #define RELAY_LOCK()    portENTER_CRITICAL(&relayMux)
+  #define RELAY_UNLOCK()  portEXIT_CRITICAL(&relayMux)
+#else
+  #define RELAY_LOCK()    ((void)0)
+  #define RELAY_UNLOCK()  ((void)0)
+#endif
+
 static float pidIntegral      = 0.0f;
 static float pidLastError     = 0.0f;
 static float pidFilteredDeriv = 0.0f;
@@ -26,18 +40,24 @@ void controlReset() {
 }
 
 void setRelay(bool on) {
-    if (relayState != on) {
+    bool changed;
+    RELAY_LOCK();
+    changed = (relayState != on);
+    if (changed) {
         relayState = on;
         digitalWrite(RELAY_PIN, on ? HIGH : LOW);
-        Serial.printf("[RELAY] %s\n", on ? "LIGADO" : "DESLIGADO");
     }
+    RELAY_UNLOCK();
+    if (changed) Serial.printf("[RELAY] %s\n", on ? "LIGADO" : "DESLIGADO");
 }
 
 // Em paths de segurança queremos garantir o estado físico do GPIO
 // mesmo que o software ache que já está correto.
 void setRelayForce(bool on) {
+    RELAY_LOCK();
     relayState = on;
     digitalWrite(RELAY_PIN, on ? HIGH : LOW);
+    RELAY_UNLOCK();
 }
 
 // --- Histerese simples ---

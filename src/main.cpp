@@ -438,6 +438,88 @@ static void manageRecovery() {
 }
 
 // ============================================================
+// FREERTOS TASKS
+// ============================================================
+// Arquitetura:
+//   - appTask     (Core 1, prio 5):  controle, safety, timer, recovery
+//   - displayTask (Core 1, prio 2):  encoder + UI rendering
+//   - networkTask (Core 0, prio 1):  WiFi + Blynk (pode bloquear sem afetar)
+//
+// Loop principal Arduino vira no-op. Cada task é watchdogged.
+// State global é compartilhado; mudanças críticas no relé estão protegidas
+// por critical section em setRelay/setRelayForce. Demais escritas dependem
+// de atomicidade single-word do ESP32 (int/float/bool — alinhados são atomic).
+
+static TaskHandle_t hAppTask     = NULL;
+static TaskHandle_t hDisplayTask = NULL;
+static TaskHandle_t hNetworkTask = NULL;
+
+static void appTask(void* /*arg*/) {
+    esp_task_wdt_add(NULL);
+    while (true) {
+        manageTemperature();
+        safetyCheck();
+
+        AutotuneState atSt = autotuneGetState();
+        if (atSt == AT_HEATING || atSt == AT_COOLING) {
+            autotuneUpdate();
+        } else if (atSt == AT_DONE) {
+            setRelay(false);
+        } else if (!recoveryPending) {
+            controlRun();
+        }
+
+        if (systemActive) timerUpdate();
+        if (timerIsExpired()) {
+            systemActive = false;
+            setRelay(false);
+            storageSaveRecoveryState();
+            Serial.println("[TIMER] Sistema desativado por timer");
+        }
+
+        manageRecovery();
+        manageRecoverySave();
+
+        esp_task_wdt_reset();
+        vTaskDelay(pdMS_TO_TICKS(20));   // 50Hz tick — control loop
+    }
+}
+
+static void displayTask(void* /*arg*/) {
+    esp_task_wdt_add(NULL);
+    while (true) {
+        handleInputAndBacklight();
+        displayUpdate();
+        displayGraphSample();
+
+        esp_task_wdt_reset();
+        vTaskDelay(pdMS_TO_TICKS(20));   // 50Hz tick — UI fluida
+    }
+}
+
+static void networkTask(void* /*arg*/) {
+    esp_task_wdt_add(NULL);
+    while (true) {
+        manageWiFi();
+        manageBlynk();
+
+        esp_task_wdt_reset();
+        vTaskDelay(pdMS_TO_TICKS(50));   // 20Hz — rede sem urgência
+    }
+}
+
+// Loga o "high water mark" (menor stack livre) de cada task.
+// Útil pra dimensionar stack — chame após o sistema rodar um pouco.
+static void logStackHighWaterMarks() {
+    if (hAppTask)     Serial.printf("[STACK] app:     %u bytes livres\n",
+                                    uxTaskGetStackHighWaterMark(hAppTask));
+    if (hDisplayTask) Serial.printf("[STACK] display: %u bytes livres\n",
+                                    uxTaskGetStackHighWaterMark(hDisplayTask));
+    if (hNetworkTask) Serial.printf("[STACK] network: %u bytes livres\n",
+                                    uxTaskGetStackHighWaterMark(hNetworkTask));
+}
+
+// ============================================================
 // SETUP
 // ============================================================
 void setup() {
@@ -453,9 +535,8 @@ void setup() {
     relayState = false;
     Serial.println("[BOOT] Rele OFF");
 
-    // 2. Watchdog
+    // 2. Watchdog (cada task se registra; loop principal não está sob WDT)
     esp_task_wdt_init(WDT_TIMEOUT_SEC, true);
-    esp_task_wdt_add(NULL);
     Serial.printf("[BOOT] WDT %ds\n", WDT_TIMEOUT_SEC);
 
     // 3. Carregar configurações
@@ -495,57 +576,27 @@ void setup() {
     wfState = WF_INIT;
     lastInteraction = millis();
 
+    // 11. Cria as 3 tasks. Stacks generosos (4kB control/display, 8kB network
+    //     porque WiFi+Blynk consomem mais). Cada task se registra no WDT.
+    xTaskCreatePinnedToCore(appTask,     "app",     4096, NULL, 5, &hAppTask,     APP_CPU_NUM);
+    xTaskCreatePinnedToCore(displayTask, "display", 4096, NULL, 2, &hDisplayTask, APP_CPU_NUM);
+    xTaskCreatePinnedToCore(networkTask, "network", 8192, NULL, 1, &hNetworkTask, PRO_CPU_NUM);
+
+    Serial.println("[BOOT] Tasks criadas (app/display em Core 1, network em Core 0)");
     Serial.println("[BOOT] Setup completo");
     Serial.println("========================================");
 }
 
 // ============================================================
-// LOOP PRINCIPAL
+// LOOP PRINCIPAL — vazio. Toda lógica está nas tasks.
+// O loopTask do Arduino fica suspended via vTaskDelay longo.
+// A cada 30s, loga o stack high-water-mark das tasks (debug de dimensionamento).
 // ============================================================
 void loop() {
-    // 1. Input + backlight
-    handleInputAndBacklight();
-
-    // 2. Temperatura
-    manageTemperature();
-
-    // 3. Segurança
-    safetyCheck();
-
-    // 4. Controle ou Auto-tune
-    //    AT_HEATING/AT_COOLING: autotune ativo → autotuneUpdate()
-    //    AT_DONE: aguardando confirmação do usuário → não controlar (relé fica OFF)
-    //    AT_IDLE/AT_CANCELLED: controle normal
-    AutotuneState atSt = autotuneGetState();
-    if (atSt == AT_HEATING || atSt == AT_COOLING) {
-        autotuneUpdate();
-    } else if (atSt == AT_DONE) {
-        setRelay(false);
-    } else if (!recoveryPending) {
-        controlRun();
+    static unsigned long lastStackLog = 0;
+    if (millis() - lastStackLog >= 30000UL) {
+        lastStackLog = millis();
+        logStackHighWaterMarks();
     }
-
-    // 5. Timer
-    if (systemActive) timerUpdate();
-    if (timerIsExpired()) {
-        systemActive = false;
-        setRelay(false);
-        storageSaveRecoveryState();
-        Serial.println("[TIMER] Sistema desativado por timer");
-    }
-
-    // 6. Display
-    displayUpdate();
-    displayGraphSample();
-
-    // 7. Recovery (decisão / timeout)
-    manageRecovery();
-    manageRecoverySave();
-
-    // 8. WiFi + Blynk
-    manageWiFi();
-    manageBlynk();
-
-    // 9. Watchdog
-    esp_task_wdt_reset();
+    vTaskDelay(pdMS_TO_TICKS(1000));
 }
