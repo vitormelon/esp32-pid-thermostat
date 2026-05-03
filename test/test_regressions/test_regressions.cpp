@@ -397,6 +397,51 @@ void test_bug8_nvs_reads_before_write_for_comparison(void) {
 }
 
 // ============================================================
+// BUG #I: HARD_CUTOFF_TEMP was set to 30C for bench testing and never
+// reverted for production. Symptom: with SP=80C, the relay would shut
+// off at 30C (cutoff) and SAFETY_OVERTEMP would fire ~60s later at
+// ~31-32C. Post-fix: cutoff sits above SP_MAX with headroom for PID
+// overshoot, and recovery keeps hysteresis.
+// ============================================================
+
+void test_bugI_hard_cutoff_must_be_above_sp_max(void) {
+    // Invariant: hardware cutoff must never fall below the max allowed
+    // setpoint — otherwise any normal run at the top of the range trips
+    // safety.
+    TEST_ASSERT_TRUE_MESSAGE(
+        HARD_CUTOFF_TEMP > SP_MAX,
+        "HARD_CUTOFF_TEMP must be > SP_MAX so the top of the range is usable");
+    // Minimum headroom for PID overshoot
+    TEST_ASSERT_TRUE_MESSAGE(
+        HARD_CUTOFF_TEMP >= SP_MAX + 10.0f,
+        "HARD_CUTOFF_TEMP needs >=10C of headroom above SP_MAX");
+    // Recovery must stay below cutoff to provide hysteresis
+    TEST_ASSERT_TRUE(CUTOFF_RECOVERY_TEMP < HARD_CUTOFF_TEMP);
+}
+
+void test_bugI_normal_warmup_below_setpoint_does_not_trigger_safety(void) {
+    // Reproduces the reported symptom: SP=80C, oven warming up from 25C.
+    // No cutoff or overtemp must fire while the temperature is below SP.
+    setPoint    = 80.0f;
+    currentTemp = 25.0f;
+    safetyError = SAFETY_OK;
+    hardCutoffActive = false;
+    safetyInit();
+
+    // Simulate a warmup ramp up to 75C (still below SP)
+    for (float t = 25.0f; t <= 75.0f; t += 1.0f) {
+        currentTemp = t;
+        mockAdvanceMs(60000);   // 1 min per degree (realistic oven pace)
+        safetyCheck();
+    }
+
+    TEST_ASSERT_EQUAL_MESSAGE(SAFETY_OK, safetyError,
+        "Safety must not trigger during normal warmup below the setpoint");
+    TEST_ASSERT_FALSE_MESSAGE(hardCutoffActive,
+        "hardCutoffActive must not be set while temp is below the setpoint");
+}
+
+// ============================================================
 // Runner
 // ============================================================
 
@@ -416,5 +461,7 @@ int main(int, char**) {
     RUN_TEST(test_bugF_recoveryReset_clears_all_recovery_globals);
     RUN_TEST(test_bug8_nvs_skips_write_when_value_unchanged);
     RUN_TEST(test_bug8_nvs_reads_before_write_for_comparison);
+    RUN_TEST(test_bugI_hard_cutoff_must_be_above_sp_max);
+    RUN_TEST(test_bugI_normal_warmup_below_setpoint_does_not_trigger_safety);
     return UNITY_END();
 }
