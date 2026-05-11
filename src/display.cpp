@@ -694,9 +694,12 @@ static void handleConfigInput(EncoderInput in) {
                 case CFG_KP:
                     pidKp = constrain(pidKp + d * PID_KP_STEP, PID_KP_MIN, PID_KP_MAX);
                     break;
-                case CFG_KI:
+                case CFG_KI: {
+                    float oldKi = pidKi;
                     pidKi = constrain(pidKi + d * PID_KI_STEP, PID_KI_MIN, PID_KI_MAX);
+                    controlReparamKi(oldKi);
                     break;
+                }
                 case CFG_KD:
                     pidKd = constrain(pidKd + d * PID_KD_STEP, PID_KD_MIN, PID_KD_MAX);
                     break;
@@ -704,6 +707,7 @@ static void handleConfigInput(EncoderInput in) {
                     long ws = (long)(pidWindowSize / 1000) + d * PID_WINDOW_STEP_S;
                     ws = constrain(ws, (long)PID_WINDOW_MIN_S, (long)PID_WINDOW_MAX_S);
                     pidWindowSize = (unsigned long)ws * 1000UL;
+                    controlReparamWindow();
                     break;
                 }
                 case CFG_THRESHOLD:
@@ -719,10 +723,10 @@ static void handleConfigInput(EncoderInput in) {
             switch (item2) {
                 case CFG_OFFSET:    storageSaveOffset(); break;
                 case CFG_MODE:      storageSaveControlMode(); break;
-                case CFG_KP:        storageSavePidKp(); controlReset(); break;
-                case CFG_KI:        storageSavePidKi(); controlReset(); break;
-                case CFG_KD:        storageSavePidKd(); controlReset(); break;
-                case CFG_WINDOW:    storageSavePidWindow(); controlReset(); break;
+                case CFG_KP:        storageSavePidKp();     break;  // bumpless: Kp applies directly, no reset
+                case CFG_KI:        storageSavePidKi();     break;  // bumpless: already reparameterized on rotation
+                case CFG_KD:        storageSavePidKd();     break;  // bumpless: Kd applies directly, no reset
+                case CFG_WINDOW:    storageSavePidWindow(); break;  // bumpless: phase already restarted on rotation
                 case CFG_THRESHOLD: storageSavePidThreshold(); break;
                 case CFG_BACKLIGHT: storageSaveBacklightTimeout(); break;
             }

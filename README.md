@@ -57,7 +57,7 @@ Print settings: PLA, no supports, 0.2mm layer height. Has openings for LCD, enco
 
 ### ESP32 DevKit V1
 
-```
+```text
 GPIO 4  ── DS18B20 DATA (4.7k pull-up to 3.3V)
 GPIO 23 ── Relay IN
 GPIO 21 ── LCD SDA (I2C)
@@ -72,7 +72,7 @@ GPIO 25 ── Encoder SW (button)
 
 GPIOs 22-34 are not available on S3-WROOM. Use this alternative pinout:
 
-```
+```text
 GPIO 4  ── DS18B20 DATA
 GPIO 5  ── Relay IN
 GPIO 8  ── LCD SDA (I2C)
@@ -86,7 +86,7 @@ GPIO 15 ── Encoder SW (button)
 All pins are configurable in `src/config.h`.
 
 > **Important:** Power the encoder with **3.3V**, not 5V. ESP32 GPIOs are not 5V tolerant.
-
+>
 > The LCD I2C address (`LCD_ADDR`) is set to `0x3F`. If the display doesn't work, try `0x27` in `src/config.h`.
 
 ---
@@ -211,7 +211,7 @@ Configurable timeout: always on, 1min, 5min, or 10min. When off, any interaction
 
 ### Home
 
-```
+```text
  75.3°C  01:05:30 ON
  SP: 80.0 Histerese
  Timer: 01:30
@@ -227,7 +227,7 @@ Configurable timeout: always on, 1min, 5min, or 10min. When off, any interaction
 
 ### Graph
 
-```
+```text
  95 -▇▅▃▂▁▁▂▃▅▇▇████
 >80  ▁▂▃▅▇████████▇▅▃
  65  ▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁▁
@@ -254,11 +254,20 @@ Configurable timeout: always on, 1min, 5min, or 10min. When off, any interaction
 | Backlight | Always | Always / 1min / 5min / 10min | Cycle |
 | Presets | Always | Opens preset submenu | — |
 
-Changing Kp, Ki, Kd, or Window automatically resets the PID state for immediate effect.
+Parameter changes apply with **bumpless transfer** — the loop is not reset and the relay does not jump. Encoder and Blynk paths behave identically.
 
-### Auto-Tune
+| Parameter | Effect on change |
+|---|---|
+| Kp | Takes effect on the next compute cycle. No state changes. |
+| Kd | Takes effect on the next compute cycle. No state changes. |
+| Ki | Integral is rescaled so `Ki × integral` stays constant. |
+| Window | Duty-cycle phase restarts; relay state is preserved. |
 
-Dedicated screen (4th screen). Available only in PID modes. During execution shows temperature, SP, cycle count, ETA, previous/current cycle duration, and total elapsed time.
+Mode change, preset load, and system activation still trigger a full PID reset.
+
+### Auto-Tune (screen)
+
+Dedicated screen (4th screen). Available only in PID modes. During execution shows temperature, SP, cycle count, ETA, previous/current cycle duration, and total elapsed time. The full algorithm is described in the [Auto-Tune](#auto-tune) section below.
 
 ### Presets
 
@@ -268,14 +277,18 @@ Accessible via Settings > Presets. Each preset stores Kp, Ki, Kd, and window for
 
 ## Auto-Tune
 
-Relay feedback method with Tyreus-Luyben constants (less overshoot than classic Ziegler-Nichols).
+Relay-feedback method with conservative custom constants tuned for thermal
+systems with significant lag (less overshoot than classic Ziegler-Nichols).
 
-1. Relay oscillates around SetPoint (ON below, OFF above)
-2. Measures amplitude and period of each oscillation
-3. Averages Ku and Tu over 5 cycles
-4. Applies: Kp = 0.33 Ku, Ki = Kp / (0.5 Tu), Kd = 0.33 Kp Tu
+1. Relay oscillates around SetPoint (ON below, OFF above).
+2. Measures amplitude and period of each oscillation.
+3. Averages Ku and Tu over 5 cycles.
+4. Applies: `Kp = 0.33 Ku`, `Ki = Kp / (0.5 Tu)`, `Kd = 0.33 Kp Tu`.
 
-Multi-cycle averaging and conservative constants produce more stable parameters with less overshoot for thermal systems.
+These coefficients are a custom variant — Kp follows Tyreus-Luyben PI,
+Ki uses the classic Ziegler-Nichols integral time, and Kd is more
+generous than either to compensate for thermal-lag dominance. Multi-cycle
+averaging produces more stable parameters than a single-cycle estimate.
 
 ---
 
@@ -328,7 +341,7 @@ Relay OFF. System deactivated. Error screen showing last known temperature.
 
 If the system is active during a power outage, on reboot it shows:
 
-```
+```text
 Ciclo interrompido!
 Continuar?      18s
 
@@ -363,7 +376,7 @@ Bidirectional sync every 2s. Local changes (encoder) reflect in the app and vice
 
 ## Project Structure
 
-```
+```text
 esp32-pid-thermostat/
 ├── docs/
 │   ├── images/
