@@ -8,12 +8,21 @@
 // No host (testes): no-op.
 #ifdef ARDUINO_ARCH_ESP32
   #include "freertos/FreeRTOS.h"
-  static portMUX_TYPE relayMux = portMUX_INITIALIZER_UNLOCKED;
+  static portMUX_TYPE relayMux    = portMUX_INITIALIZER_UNLOCKED;
+  static portMUX_TYPE pidStateMux = portMUX_INITIALIZER_UNLOCKED;
   #define RELAY_LOCK()    portENTER_CRITICAL(&relayMux)
   #define RELAY_UNLOCK()  portEXIT_CRITICAL(&relayMux)
+  // Protects pidIntegral / relayPhaseStart / lastRelayForPhase against
+  // concurrent access by the control task (computePID, controlPIDWindow)
+  // and external mutators (controlReparamKi/Window from encoder or Blynk
+  // tasks). Lock order: PID_LOCK never wraps RELAY_LOCK or vice-versa.
+  #define PID_LOCK()      portENTER_CRITICAL(&pidStateMux)
+  #define PID_UNLOCK()    portEXIT_CRITICAL(&pidStateMux)
 #else
   #define RELAY_LOCK()    ((void)0)
   #define RELAY_UNLOCK()  ((void)0)
+  #define PID_LOCK()      ((void)0)
+  #define PID_UNLOCK()    ((void)0)
 #endif
 
 static float pidIntegral      = 0.0f;
@@ -37,6 +46,33 @@ void controlInit() {
 
 void controlReset() {
     controlInit();
+}
+
+// Bumpless transfer on Ki change: keeps (Ki * integral) constant so the
+// output does not jump. Reapplies the integral clamp to the new Ki bound.
+// PID_LOCK serializes the read-modify-write against the control task.
+void controlReparamKi(float oldKi) {
+    PID_LOCK();
+    if (pidKi <= 0.0f) {
+        pidIntegral = 0.0f;
+    } else {
+        if (oldKi > 0.0f && oldKi != pidKi) {
+            pidIntegral *= oldKi / pidKi;
+        }
+        float maxInt = 50.0f / pidKi;
+        pidIntegral = constrain(pidIntegral, -maxInt, maxInt);
+    }
+    PID_UNLOCK();
+}
+
+// Window size changed: discard the current phase and restart the duty
+// countdown in the current relay state (does not touch the GPIO).
+// PID_LOCK serializes against controlPIDWindow in the control task.
+void controlReparamWindow() {
+    PID_LOCK();
+    relayPhaseStart   = millis();
+    lastRelayForPhase = relayState;
+    PID_UNLOCK();
 }
 
 void setRelay(bool on) {
@@ -83,6 +119,7 @@ static void computePID() {
     pidFilteredDeriv = DERIV_FILTER_ALPHA * rawDeriv
                      + (1.0f - DERIV_FILTER_ALPHA) * pidFilteredDeriv;
 
+    PID_LOCK();
     if (pidKi <= 0.0f) {
         pidIntegral = 0.0f;
     } else {
@@ -97,9 +134,11 @@ static void computePID() {
         float maxInt = 50.0f / pidKi;
         pidIntegral = constrain(pidIntegral, -maxInt, maxInt);
     }
+    float integralSnapshot = pidIntegral;
+    PID_UNLOCK();
 
     pidOutput = constrain(
-        pidKp * error + pidKi * pidIntegral + pidKd * pidFilteredDeriv,
+        pidKp * error + pidKi * integralSnapshot + pidKd * pidFilteredDeriv,
         0.0f, 100.0f
     );
 

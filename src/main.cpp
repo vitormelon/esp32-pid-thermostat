@@ -305,9 +305,8 @@ BLYNK_WRITE(V4) {
 BLYNK_WRITE(V5) {
     float v = param.asFloat();
     if (v >= PID_KP_MIN && v <= PID_KP_MAX) {
-        pidKp = v;
+        pidKp = v;                  // bumpless: Kp applies directly, no reset
         storageSavePidKp();
-        controlReset();
         Serial.printf("[BLYNK] Kp=%.3f\n", pidKp);
     }
 }
@@ -315,9 +314,10 @@ BLYNK_WRITE(V5) {
 BLYNK_WRITE(V6) {
     float v = param.asFloat();
     if (v >= PID_KI_MIN && v <= PID_KI_MAX) {
+        float oldKi = pidKi;
         pidKi = v;
+        controlReparamKi(oldKi);    // preserves Ki * integral
         storageSavePidKi();
-        controlReset();
         Serial.printf("[BLYNK] Ki=%.4f\n", pidKi);
     }
 }
@@ -325,9 +325,8 @@ BLYNK_WRITE(V6) {
 BLYNK_WRITE(V7) {
     float v = param.asFloat();
     if (v >= PID_KD_MIN && v <= PID_KD_MAX) {
-        pidKd = v;
+        pidKd = v;                  // bumpless: Kd applies directly, no reset
         storageSavePidKd();
-        controlReset();
         Serial.printf("[BLYNK] Kd=%.1f\n", pidKd);
     }
 }
@@ -337,8 +336,8 @@ BLYNK_WRITE(V8) {
     if (ms >= (unsigned long)PID_WINDOW_MIN_S * 1000UL &&
         ms <= (unsigned long)PID_WINDOW_MAX_S * 1000UL) {
         pidWindowSize = ms;
+        controlReparamWindow();     // restart only the duty-cycle phase
         storageSavePidWindow();
-        controlReset();
         Serial.printf("[BLYNK] Win=%lums\n", pidWindowSize);
     }
 }
